@@ -20,9 +20,9 @@
       <item>
        <layout class="QVBoxLayout" name="leftLayout">
         <item>
-         <widget class="QPushButton" name="loadBaseBtn">
+         <widget class="QPushButton" name="captureBaseBtn">
           <property name="text">
-           <string>加载基准图片</string>
+           <string>拍摄基准图片</string>
           </property>
          </widget>
         </item>
@@ -59,7 +59,7 @@
         <item>
          <widget class="QPushButton" name="cameraBtn">
           <property name="text">
-           <string>拍摄图片</string>
+           <string>开始视频流</string>
           </property>
          </widget>
         </item>

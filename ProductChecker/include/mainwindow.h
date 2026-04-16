@@ -3,12 +3,14 @@
 
 #include <QMainWindow>
 #include <QTimer>
-#include <opencv2/opencv.hpp>
 #include "camera.h"
+#include <opencv2/opencv.hpp>
 
+QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 }
+QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
 {
@@ -19,20 +21,24 @@ public:
     ~MainWindow();
 
 private slots:
-    void loadBaseImage();
+    void captureBaseImage();
     void compareImages();
     void toggleCamera();
     void onCameraChanged(int index);
+    void updateVideoStream();
 
 private:
     Ui::MainWindow *ui;
-    QImage baseImage;
-    QImage cameraImage;
+    Camera *camera;
+    QTimer *videoTimer;
+    bool cameraActive;
+    bool videoStreamActive;
     cv::Mat baseMat;
     cv::Mat cameraMat;
-    Camera *camera;
-    QTimer *timer;
-    bool cameraActive;
+    cv::Mat previousFrame;
+    cv::Mat motionMask;
+    QImage baseImage;
+    QImage cameraImage;
 };
 
 #endif // MAINWINDOW_H

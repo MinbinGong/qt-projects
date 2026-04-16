@@ -28,12 +28,16 @@ QImage matToQImage(const cv::Mat &mat)
 
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false)
+    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false)
 {
     ui->setupUi(this);
 
     // 创建相机对象
     camera = new Camera(this);
+
+    // 创建视频定时器
+    videoTimer = new QTimer(this);
+    connect(videoTimer, &QTimer::timeout, this, &MainWindow::updateVideoStream);
 
     // 检测可用的相机
     camera->detectCameras();
@@ -76,7 +80,7 @@ MainWindow::MainWindow(QWidget *parent)
     if (cameraIndex >= 0 && cameraIndex < cameraCount) {
         bool success = camera->open(cameraIndex);
         if (success) {
-            ui->resultLabel->setText("相机已就绪，请点击拍摄图片");
+            ui->resultLabel->setText("相机已就绪，点击开始视频流");
             ui->resultLabel->setStyleSheet("color: blue;");
             cameraActive = true;
         } else {
@@ -85,7 +89,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    connect(ui->loadBaseBtn, &QPushButton::clicked, this, &MainWindow::loadBaseImage);
+    connect(ui->captureBaseBtn, &QPushButton::clicked, this, &MainWindow::captureBaseImage);
     connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareImages);
     connect(ui->cameraBtn, &QPushButton::clicked, this, &MainWindow::toggleCamera);
     connect(ui->cameraComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onCameraChanged);
@@ -94,43 +98,14 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete camera;
+    delete videoTimer;
     delete ui;
-}
-
-void MainWindow::loadBaseImage()
-{
-    QString fileName = QFileDialog::getOpenFileName(this, "选择基准图片", "", "图片文件 (*.png *.jpg *.jpeg)");
-    if (!fileName.isEmpty()) {
-        ui->resultLabel->setText(QString("正在加载图片: %1").arg(fileName));
-        ui->resultLabel->setStyleSheet("color: blue;");
-        
-        // 检查文件是否存在
-        QFileInfo fileInfo(fileName);
-        if (!fileInfo.exists()) {
-            ui->resultLabel->setText("错误: 文件不存在");
-            ui->resultLabel->setStyleSheet("color: red;");
-            return;
-        }
-        
-        // 尝试加载图片
-        baseMat = cv::imread(fileName.toStdString());
-        if (!baseMat.empty()) {
-            baseImage = matToQImage(baseMat);
-            QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            ui->baseImageLabel->setPixmap(pixmap);
-            ui->resultLabel->setText("基准图片加载成功");
-            ui->resultLabel->setStyleSheet("color: green;");
-        } else {
-            ui->resultLabel->setText("错误: 图片加载失败");
-            ui->resultLabel->setStyleSheet("color: red;");
-        }
-    }
 }
 
 void MainWindow::compareImages()
 {
     if (baseMat.empty() || cameraMat.empty()) {
-        ui->resultLabel->setText("请先加载基准图片并拍摄图片");
+        ui->resultLabel->setText("请先拍摄基准图片并拍摄图片");
         return;
     }
 
@@ -187,9 +162,135 @@ void MainWindow::onCameraChanged(int index)
 void MainWindow::toggleCamera()
 {
     if (camera->isOpened()) {
-        // 捕获一张照片
+        if (videoStreamActive) {
+            // 停止视频流
+            videoTimer->stop();
+            videoStreamActive = false;
+            ui->cameraBtn->setText("开始视频流");
+            ui->resultLabel->setText("视频流已停止，可进行比较");
+            ui->resultLabel->setStyleSheet("color: blue;");
+        } else {
+            // 开始视频流
+            videoTimer->start(33); // 约30fps
+            videoStreamActive = true;
+            ui->cameraBtn->setText("停止视频流");
+            ui->resultLabel->setText("视频流已开始");
+            ui->resultLabel->setStyleSheet("color: green;");
+        }
+    } else {
+        // 如果相机未打开，尝试重新打开
+        int cameraIndex = ui->cameraComboBox->currentIndex();
+        bool success = camera->open(cameraIndex);
+        if (success) {
+            // 开始视频流
+            videoTimer->start(33); // 约30fps
+            videoStreamActive = true;
+            ui->cameraBtn->setText("停止视频流");
+            ui->resultLabel->setText("视频流已开始");
+            ui->resultLabel->setStyleSheet("color: green;");
+        } else {
+            ui->resultLabel->setText("无法打开相机");
+            ui->resultLabel->setStyleSheet("color: red;");
+        }
+    }
+}
+
+void MainWindow::captureBaseImage()
+{
+    if (camera->isOpened()) {
+        // 如果视频流正在运行，停止视频流
+        if (videoStreamActive) {
+            videoTimer->stop();
+            videoStreamActive = false;
+            ui->cameraBtn->setText("开始视频流");
+        }
+        
+        // 捕获一帧图像作为基准图片
+        baseMat = camera->captureFrame();
+        if (!baseMat.empty()) {
+            baseImage = matToQImage(baseMat);
+            QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            ui->baseImageLabel->setPixmap(pixmap);
+            ui->resultLabel->setText("基准图片拍摄成功");
+            ui->resultLabel->setStyleSheet("color: green;");
+        } else {
+            ui->resultLabel->setText("无法捕获基准图片");
+            ui->resultLabel->setStyleSheet("color: red;");
+        }
+    } else {
+        // 如果相机未打开，尝试重新打开
+        int cameraIndex = ui->cameraComboBox->currentIndex();
+        bool success = camera->open(cameraIndex);
+        if (success) {
+            // 捕获一帧图像作为基准图片
+            baseMat = camera->captureFrame();
+            if (!baseMat.empty()) {
+                baseImage = matToQImage(baseMat);
+                QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                ui->baseImageLabel->setPixmap(pixmap);
+                ui->resultLabel->setText("基准图片拍摄成功");
+                ui->resultLabel->setStyleSheet("color: green;");
+            } else {
+                ui->resultLabel->setText("无法捕获基准图片");
+                ui->resultLabel->setStyleSheet("color: red;");
+            }
+        } else {
+            ui->resultLabel->setText("无法打开相机");
+            ui->resultLabel->setStyleSheet("color: red;");
+        }
+    }
+}
+
+
+
+void MainWindow::updateVideoStream()
+{
+    if (camera->isOpened()) {
+        // 捕获视频帧
         cameraMat = camera->captureFrame();
         if (!cameraMat.empty()) {
+            // 应用运动侦测
+            // 转换为灰度图
+            cv::Mat grayFrame;
+            cv::cvtColor(cameraMat, grayFrame, cv::COLOR_BGR2GRAY);
+            
+            // 高斯模糊
+            cv::GaussianBlur(grayFrame, grayFrame, cv::Size(21, 21), 0);
+            
+            // 如果是第一帧，保存为前一帧
+            if (previousFrame.empty()) {
+                grayFrame.copyTo(previousFrame);
+            }
+            
+            // 计算帧差
+            cv::absdiff(previousFrame, grayFrame, motionMask);
+            
+            // 应用阈值
+            cv::threshold(motionMask, motionMask, 25, 255, cv::THRESH_BINARY);
+            
+            // 形态学操作
+            cv::dilate(motionMask, motionMask, cv::Mat(), cv::Point(-1, -1), 2);
+            cv::erode(motionMask, motionMask, cv::Mat(), cv::Point(-1, -1), 1);
+            
+            // 检测轮廓
+            std::vector<std::vector<cv::Point>> contours;
+            cv::findContours(motionMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+            
+            // 绘制轮廓
+            for (size_t i = 0; i < contours.size(); i++) {
+                // 过滤小轮廓
+                if (cv::contourArea(contours[i]) < 500) {
+                    continue;
+                }
+                
+                // 绘制边界框
+                cv::Rect boundingRect = cv::boundingRect(contours[i]);
+                cv::rectangle(cameraMat, boundingRect, cv::Scalar(0, 255, 0), 2);
+            }
+            
+            // 保存当前帧为前一帧
+            grayFrame.copyTo(previousFrame);
+            
             cameraImage = matToQImage(cameraMat);
             // 计算窗口大小的45%
             int maxWidth = this->width() * 0.45;
@@ -198,31 +299,6 @@ void MainWindow::toggleCamera()
             // 缩放到窗口大小的45%，保持宽高比
             QPixmap pixmap = QPixmap::fromImage(cameraImage.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
             ui->cameraImageLabel->setPixmap(pixmap);
-            ui->resultLabel->setText("已捕获图片，可进行比较");
-            ui->resultLabel->setStyleSheet("color: blue;");
-        }
-    } else {
-        // 如果相机未打开，尝试重新打开
-        int cameraIndex = ui->cameraComboBox->currentIndex();
-        bool success = camera->open(cameraIndex);
-        if (success) {
-            // 捕获一张照片
-            cameraMat = camera->captureFrame();
-            if (!cameraMat.empty()) {
-                cameraImage = matToQImage(cameraMat);
-                // 计算窗口大小的45%
-                int maxWidth = this->width() * 0.45;
-                int maxHeight = this->height() * 0.45;
-                QSize maxSize(maxWidth, maxHeight);
-                // 缩放到窗口大小的45%，保持宽高比
-                QPixmap pixmap = QPixmap::fromImage(cameraImage.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                ui->cameraImageLabel->setPixmap(pixmap);
-                ui->resultLabel->setText("已捕获图片，可进行比较");
-                ui->resultLabel->setStyleSheet("color: blue;");
-            }
-        } else {
-            ui->resultLabel->setText("无法打开相机");
-            ui->resultLabel->setStyleSheet("color: red;");
         }
     }
 }

@@ -78,7 +78,7 @@ build/release/ProductChecker.exe: C:/Qt/6.5.3/mingw_64/lib/libQt6Widgets.a C:/Qt
 	$(LINKER) $(LFLAGS) -o $(DESTDIR_TARGET) $(OBJECTS) $(LIBS)
 
 qmake: FORCE
-	@$(QMAKE) -o Makefile.Release ProductChecker.pro
+	@$(QMAKE) -o Makefile.Release ProductChecker.pro -spec win32-g++ "CONFIG+=debug"
 
 qmake_all: FORCE
 
@@ -277,6 +277,7 @@ build/release/moc/moc_mainwindow.cpp: include/mainwindow.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/QTimer \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qtimer.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qbasictimer.h \
+		include/camera.h \
 		C:/opencv-build/install/include/opencv2/opencv.hpp \
 		C:/opencv-build/install/include/opencv2/opencv_modules.hpp \
 		C:/opencv-build/install/include/opencv2/core.hpp \
@@ -390,7 +391,6 @@ build/release/moc/moc_mainwindow.cpp: include/mainwindow.h \
 		C:/opencv-build/install/include/opencv2/video.hpp \
 		C:/opencv-build/install/include/opencv2/video/tracking.hpp \
 		C:/opencv-build/install/include/opencv2/video/background_segm.hpp \
-		include/camera.h \
 		build/release/moc/moc_predefs.h \
 		C:/Qt/6.5.3/mingw_64/bin/moc.exe
 	C:\Qt\6.5.3\mingw_64\bin\moc.exe $(DEFINES) --include D:/Workspace/Repos/qt-projects/ProductChecker/build/release/moc/moc_predefs.h -IC:/Qt/6.5.3/mingw_64/mkspecs/win32-g++ -ID:/Workspace/Repos/qt-projects/ProductChecker -ID:/Workspace/Repos/qt-projects/ProductChecker/include -IC:/opencv-build/install/include -IC:/Qt/6.5.3/mingw_64/include -IC:/Qt/6.5.3/mingw_64/include/QtWidgets -IC:/Qt/6.5.3/mingw_64/include/QtGui -IC:/Qt/6.5.3/mingw_64/include/QtCore -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++ -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++/x86_64-w64-mingw32 -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++/backward -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include-fixed -IC:/Qt/Tools/mingw1120_64/x86_64-w64-mingw32/include include\mainwindow.h -o build\release\moc\moc_mainwindow.cpp
@@ -790,6 +790,7 @@ build/release/obj/main.o: src/main.cpp include/mainwindow.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/QTimer \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qtimer.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qbasictimer.h \
+		include/camera.h \
 		C:/opencv-build/install/include/opencv2/opencv.hpp \
 		C:/opencv-build/install/include/opencv2/opencv_modules.hpp \
 		C:/opencv-build/install/include/opencv2/core.hpp \
@@ -903,7 +904,6 @@ build/release/obj/main.o: src/main.cpp include/mainwindow.h \
 		C:/opencv-build/install/include/opencv2/video.hpp \
 		C:/opencv-build/install/include/opencv2/video/tracking.hpp \
 		C:/opencv-build/install/include/opencv2/video/background_segm.hpp \
-		include/camera.h \
 		C:/Qt/6.5.3/mingw_64/include/QtWidgets/QApplication \
 		C:/Qt/6.5.3/mingw_64/include/QtWidgets/qapplication.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qcoreapplication.h \
@@ -1091,6 +1091,7 @@ build/release/obj/mainwindow.o: src/mainwindow.cpp include/mainwindow.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/QTimer \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qtimer.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/qbasictimer.h \
+		include/camera.h \
 		C:/opencv-build/install/include/opencv2/opencv.hpp \
 		C:/opencv-build/install/include/opencv2/opencv_modules.hpp \
 		C:/opencv-build/install/include/opencv2/core.hpp \
@@ -1204,7 +1205,6 @@ build/release/obj/mainwindow.o: src/mainwindow.cpp include/mainwindow.h \
 		C:/opencv-build/install/include/opencv2/video.hpp \
 		C:/opencv-build/install/include/opencv2/video/tracking.hpp \
 		C:/opencv-build/install/include/opencv2/video/background_segm.hpp \
-		include/camera.h \
 		build/release/ui/ui_mainwindow.h \
 		C:/Qt/6.5.3/mingw_64/include/QtCore/QVariant \
 		C:/Qt/6.5.3/mingw_64/include/QtWidgets/QApplication \
