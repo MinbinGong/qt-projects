@@ -57,11 +57,22 @@
          </widget>
         </item>
         <item>
-         <widget class="QPushButton" name="cameraBtn">
-          <property name="text">
-           <string>开始视频流</string>
-          </property>
-         </widget>
+         <layout class="QHBoxLayout" name="cameraControlLayout">
+          <item>
+           <widget class="QPushButton" name="cameraBtn">
+            <property name="text">
+             <string>开始视频流</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="captureImageBtn">
+            <property name="text">
+             <string>抓取图片</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <widget class="QLabel" name="cameraImageLabel">

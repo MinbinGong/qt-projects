@@ -28,7 +28,7 @@ QImage matToQImage(const cv::Mat &mat)
 
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false)
+    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false), motionDetected(false), captureEnabled(false), captureCooldown(0)
 {
     ui->setupUi(this);
 
@@ -38,6 +38,11 @@ MainWindow::MainWindow(QWidget *parent)
     // 创建视频定时器
     videoTimer = new QTimer(this);
     connect(videoTimer, &QTimer::timeout, this, &MainWindow::updateVideoStream);
+    
+    // 创建运动捕获定时器
+    motionCaptureTimer = new QTimer(this);
+    motionCaptureTimer->setInterval(1000); // 1秒
+    connect(motionCaptureTimer, &QTimer::timeout, this, &MainWindow::resetCaptureCooldown);
 
     // 检测可用的相机
     camera->detectCameras();
@@ -90,6 +95,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     connect(ui->captureBaseBtn, &QPushButton::clicked, this, &MainWindow::captureBaseImage);
+    connect(ui->captureImageBtn, &QPushButton::clicked, this, &MainWindow::captureImageAndCompare);
     connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareImages);
     connect(ui->cameraBtn, &QPushButton::clicked, this, &MainWindow::toggleCamera);
     connect(ui->cameraComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onCameraChanged);
@@ -99,6 +105,7 @@ MainWindow::~MainWindow()
 {
     delete camera;
     delete videoTimer;
+    delete motionCaptureTimer;
     delete ui;
 }
 
@@ -165,7 +172,9 @@ void MainWindow::toggleCamera()
         if (videoStreamActive) {
             // 停止视频流
             videoTimer->stop();
+            motionCaptureTimer->stop();
             videoStreamActive = false;
+            captureEnabled = false;
             ui->cameraBtn->setText("开始视频流");
             ui->resultLabel->setText("视频流已停止，可进行比较");
             ui->resultLabel->setStyleSheet("color: blue;");
@@ -173,8 +182,10 @@ void MainWindow::toggleCamera()
             // 开始视频流
             videoTimer->start(33); // 约30fps
             videoStreamActive = true;
+            captureEnabled = true;
+            captureCooldown = 0;
             ui->cameraBtn->setText("停止视频流");
-            ui->resultLabel->setText("视频流已开始");
+            ui->resultLabel->setText("视频流已开始，运动检测自动抓取已启用");
             ui->resultLabel->setStyleSheet("color: green;");
         }
     } else {
@@ -185,8 +196,10 @@ void MainWindow::toggleCamera()
             // 开始视频流
             videoTimer->start(33); // 约30fps
             videoStreamActive = true;
+            captureEnabled = true;
+            captureCooldown = 0;
             ui->cameraBtn->setText("停止视频流");
-            ui->resultLabel->setText("视频流已开始");
+            ui->resultLabel->setText("视频流已开始，运动检测自动抓取已启用");
             ui->resultLabel->setStyleSheet("color: green;");
         } else {
             ui->resultLabel->setText("无法打开相机");
@@ -241,6 +254,39 @@ void MainWindow::captureBaseImage()
     }
 }
 
+void MainWindow::captureImageAndCompare()
+{
+    if (camera->isOpened()) {
+        // 从视频流中捕获一帧图像
+        cameraMat = camera->captureFrame();
+        if (!cameraMat.empty()) {
+            // 更新相机图像显示
+            cameraImage = matToQImage(cameraMat);
+            int maxWidth = this->width() * 0.45;
+            int maxHeight = this->height() * 0.45;
+            QSize maxSize(maxWidth, maxHeight);
+            QPixmap pixmap = QPixmap::fromImage(cameraImage.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            ui->cameraImageLabel->setPixmap(pixmap);
+            
+            // 自动与基准图片进行比对
+            compareImages();
+        } else {
+            ui->resultLabel->setText("无法从视频流中抓取图片");
+            ui->resultLabel->setStyleSheet("color: red;");
+        }
+    } else {
+        ui->resultLabel->setText("相机未打开");
+        ui->resultLabel->setStyleSheet("color: red;");
+    }
+}
+
+void MainWindow::resetCaptureCooldown()
+{
+    if (captureCooldown > 0) {
+        captureCooldown--;
+    }
+}
+
 
 
 void MainWindow::updateVideoStream()
@@ -277,6 +323,7 @@ void MainWindow::updateVideoStream()
             cv::findContours(motionMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
             
             // 绘制轮廓
+            motionDetected = false;
             for (size_t i = 0; i < contours.size(); i++) {
                 // 过滤小轮廓
                 if (cv::contourArea(contours[i]) < 500) {
@@ -286,10 +333,27 @@ void MainWindow::updateVideoStream()
                 // 绘制边界框
                 cv::Rect boundingRect = cv::boundingRect(contours[i]);
                 cv::rectangle(cameraMat, boundingRect, cv::Scalar(0, 255, 0), 2);
+                
+                // 检测到运动
+                motionDetected = true;
             }
             
             // 保存当前帧为前一帧
             grayFrame.copyTo(previousFrame);
+            
+            // 根据运动检测自动抓取图片
+            if (motionDetected && captureEnabled && captureCooldown == 0) {
+                // 自动抓取图片并与基准图片进行比对
+                captureImageAndCompare();
+                
+                // 设置冷却时间，避免频繁抓取
+                captureCooldown = 5; // 5秒
+                
+                // 启动冷却时间定时器
+                if (!motionCaptureTimer->isActive()) {
+                    motionCaptureTimer->start();
+                }
+            }
             
             cameraImage = matToQImage(cameraMat);
             // 计算窗口大小的45%
