@@ -50,13 +50,6 @@
       <item>
        <layout class="QVBoxLayout" name="rightLayout">
         <item>
-         <widget class="QComboBox" name="cameraComboBox">
-          <property name="toolTip">
-           <string>选择相机</string>
-          </property>
-         </widget>
-        </item>
-        <item>
          <layout class="QHBoxLayout" name="cameraControlLayout">
           <item>
            <widget class="QPushButton" name="cameraBtn">

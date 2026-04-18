@@ -25,7 +25,6 @@ private slots:
     void captureImageAndCompare();
     void compareImages();
     void toggleCamera();
-    void onCameraChanged(int index);
     void updateVideoStream();
     void resetCaptureCooldown();
 

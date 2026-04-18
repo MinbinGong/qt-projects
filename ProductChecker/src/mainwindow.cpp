@@ -3,6 +3,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QImage>
 
 // 辅助函数：将OpenCV的Mat转换为QImage
 QImage matToQImage(const cv::Mat &mat)
@@ -47,23 +48,17 @@ MainWindow::MainWindow(QWidget *parent)
     // 检测可用的相机
     camera->detectCameras();
     
-    // 填充相机下拉列表
-    ui->cameraComboBox->clear();
+    // 获取相机列表
     QStringList cameraList = camera->getCameraList();
-    for (int i = 0; i < cameraList.size(); i++) {
-        ui->cameraComboBox->addItem(cameraList[i], i);
-    }
-
-    // 确定要使用的相机索引
-    int cameraIndex = -1;
     int cameraCount = cameraList.size();
+    int selectedCameraIndex = -1;
     
     if (cameraCount == 0) {
         ui->resultLabel->setText("未检测到可用相机");
         ui->resultLabel->setStyleSheet("color: red;");
     } else if (cameraCount == 1) {
         // 只有一个相机，直接使用
-        cameraIndex = 0;
+        selectedCameraIndex = 0;
     } else {
         // 多个相机，让用户选择
         bool ok;
@@ -71,19 +66,18 @@ MainWindow::MainWindow(QWidget *parent)
             this, "选择相机", "请选择要使用的相机:", cameraList, 0, false, &ok);
         
         if (ok) {
-            cameraIndex = cameraList.indexOf(selectedCamera);
-            if (cameraIndex >= 0) {
-                ui->cameraComboBox->setCurrentIndex(cameraIndex);
-            }
+            selectedCameraIndex = cameraList.indexOf(selectedCamera);
         } else {
             // 用户取消选择，使用第一个相机
-            cameraIndex = 0;
+            selectedCameraIndex = 0;
         }
     }
-
+    
     // 打开选择的相机
-    if (cameraIndex >= 0 && cameraIndex < cameraCount) {
-        bool success = camera->open(cameraIndex);
+    if (selectedCameraIndex >= 0 && selectedCameraIndex < cameraCount) {
+        // 获取实际的相机索引
+        int actualCameraIndex = selectedCameraIndex;
+        bool success = camera->open(actualCameraIndex);
         if (success) {
             ui->resultLabel->setText("相机已就绪，点击开始视频流");
             ui->resultLabel->setStyleSheet("color: blue;");
@@ -98,7 +92,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->captureImageBtn, &QPushButton::clicked, this, &MainWindow::captureImageAndCompare);
     connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareImages);
     connect(ui->cameraBtn, &QPushButton::clicked, this, &MainWindow::toggleCamera);
-    connect(ui->cameraComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onCameraChanged);
 }
 
 MainWindow::~MainWindow()
@@ -151,20 +144,7 @@ void MainWindow::compareImages()
     }
 }
 
-void MainWindow::onCameraChanged(int index)
-{
-    // 打开选择的相机
-    bool success = camera->open(index);
-    if (success) {
-        ui->resultLabel->setText("相机已就绪，请点击拍摄图片");
-        ui->resultLabel->setStyleSheet("color: blue;");
-        cameraActive = true;
-    } else {
-        ui->resultLabel->setText("无法打开选中的相机");
-        ui->resultLabel->setStyleSheet("color: red;");
-        cameraActive = false;
-    }
-}
+
 
 void MainWindow::toggleCamera()
 {
@@ -189,9 +169,8 @@ void MainWindow::toggleCamera()
             ui->resultLabel->setStyleSheet("color: green;");
         }
     } else {
-        // 如果相机未打开，尝试重新打开
-        int cameraIndex = ui->cameraComboBox->currentIndex();
-        bool success = camera->open(cameraIndex);
+        // 如果相机未打开，尝试重新打开默认相机
+        bool success = camera->open(0);
         if (success) {
             // 开始视频流
             videoTimer->start(33); // 约30fps
@@ -210,16 +189,20 @@ void MainWindow::toggleCamera()
 
 void MainWindow::captureBaseImage()
 {
-    if (camera->isOpened()) {
-        // 如果视频流正在运行，停止视频流
-        if (videoStreamActive) {
+    bool cameraWasOpen = camera->isOpened();
+    bool videoStreamWasActive = videoStreamActive;
+    
+    if (cameraWasOpen) {
+        // 如果视频流正在运行，暂停视频流，捕获一帧图像
+        if (videoStreamWasActive) {
             videoTimer->stop();
-            videoStreamActive = false;
-            ui->cameraBtn->setText("开始视频流");
+            baseMat = camera->captureFrame();
+            videoTimer->start(33); // 恢复视频流
+        } else {
+            // 直接捕获一帧图像
+            baseMat = camera->captureFrame();
         }
         
-        // 捕获一帧图像作为基准图片
-        baseMat = camera->captureFrame();
         if (!baseMat.empty()) {
             baseImage = matToQImage(baseMat);
             QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -231,9 +214,8 @@ void MainWindow::captureBaseImage()
             ui->resultLabel->setStyleSheet("color: red;");
         }
     } else {
-        // 如果相机未打开，尝试重新打开
-        int cameraIndex = ui->cameraComboBox->currentIndex();
-        bool success = camera->open(cameraIndex);
+        // 如果相机未打开，尝试打开默认相机
+        bool success = camera->open(0);
         if (success) {
             // 捕获一帧图像作为基准图片
             baseMat = camera->captureFrame();
