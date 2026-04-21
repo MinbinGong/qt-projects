@@ -4,78 +4,104 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QImage>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QScrollArea>
 
-// 辅助函数：将OpenCV的Mat转换为QImage
-QImage matToQImage(const cv::Mat &mat)
+QImage MainWindow::matToQImage(const cv::Mat &mat)
 {
     if (mat.empty()) {
         return QImage();
     }
 
-    // 处理不同的图像格式
     if (mat.type() == CV_8UC3) {
-        // BGR格式转换为RGB
         cv::Mat rgbMat;
         cv::cvtColor(mat, rgbMat, cv::COLOR_BGR2RGB);
         return QImage(rgbMat.data, rgbMat.cols, rgbMat.rows, rgbMat.step, QImage::Format_RGB888).copy();
     } else if (mat.type() == CV_8UC1) {
-        // 灰度图像
         return QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8).copy();
     }
 
     return QImage();
 }
 
+std::vector<DetectedObject> MainWindow::detectObjectsInImage(const cv::Mat &image)
+{
+    std::vector<DetectedObject> detectedObjects;
 
+    if (image.empty()) {
+        return detectedObjects;
+    }
+
+    cv::Mat gray;
+    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+
+    cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0);
+
+    cv::Mat thresh;
+    cv::threshold(gray, thresh, 127, 255, cv::THRESH_BINARY);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    int objectId = 0;
+    for (size_t i = 0; i < contours.size(); i++) {
+        double area = cv::contourArea(contours[i]);
+        if (area < 500) {
+            continue;
+        }
+
+        DetectedObject obj;
+        obj.boundingBox = cv::boundingRect(contours[i]);
+        obj.image = image(obj.boundingBox).clone();
+        obj.id = objectId++;
+
+        detectedObjects.push_back(obj);
+    }
+
+    return detectedObjects;
+}
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false), motionDetected(false), captureEnabled(false), captureCooldown(0)
+    : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false), motionDetected(false), captureEnabled(false), captureCooldown(0),
+      compareResultDialog(nullptr)
 {
     ui->setupUi(this);
 
-    // 创建相机对象
     camera = new Camera(this);
 
-    // 创建视频定时器
     videoTimer = new QTimer(this);
     connect(videoTimer, &QTimer::timeout, this, &MainWindow::updateVideoStream);
-    
-    // 创建运动捕获定时器
+
     motionCaptureTimer = new QTimer(this);
-    motionCaptureTimer->setInterval(1000); // 1秒
+    motionCaptureTimer->setInterval(1000);
     connect(motionCaptureTimer, &QTimer::timeout, this, &MainWindow::resetCaptureCooldown);
 
-    // 检测可用的相机
     camera->detectCameras();
-    
-    // 获取相机列表
+
     QStringList cameraList = camera->getCameraList();
     int cameraCount = cameraList.size();
     int selectedCameraIndex = -1;
-    
+
     if (cameraCount == 0) {
         ui->resultLabel->setText("未检测到可用相机");
         ui->resultLabel->setStyleSheet("color: red;");
     } else if (cameraCount == 1) {
-        // 只有一个相机，直接使用
         selectedCameraIndex = 0;
     } else {
-        // 多个相机，让用户选择
         bool ok;
         QString selectedCamera = QInputDialog::getItem(
             this, "选择相机", "请选择要使用的相机:", cameraList, 0, false, &ok);
-        
+
         if (ok) {
             selectedCameraIndex = cameraList.indexOf(selectedCamera);
         } else {
-            // 用户取消选择，使用第一个相机
             selectedCameraIndex = 0;
         }
     }
-    
-    // 打开选择的相机
+
     if (selectedCameraIndex >= 0 && selectedCameraIndex < cameraCount) {
-        // 获取实际的相机索引
         int actualCameraIndex = selectedCameraIndex;
         bool success = camera->open(actualCameraIndex);
         if (success) {
@@ -89,96 +115,51 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     connect(ui->captureBaseBtn, &QPushButton::clicked, this, &MainWindow::captureBaseImage);
-    connect(ui->captureImageBtn, &QPushButton::clicked, this, &MainWindow::captureImageAndCompare);
-    connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareImages);
     connect(ui->cameraBtn, &QPushButton::clicked, this, &MainWindow::toggleCamera);
+    connect(ui->detectBtn, &QPushButton::clicked, this, &MainWindow::detectProducts);
+    connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareDetectedObjects);
 }
 
 MainWindow::~MainWindow()
 {
+    if (compareResultDialog) {
+        delete compareResultDialog;
+    }
     delete camera;
     delete videoTimer;
     delete motionCaptureTimer;
     delete ui;
 }
 
-void MainWindow::compareImages()
-{
-    if (baseMat.empty() || cameraMat.empty()) {
-        ui->resultLabel->setText("请先拍摄基准图片并拍摄图片");
-        return;
-    }
-
-    // 调整图片大小，使它们具有相同的尺寸
-    cv::Mat resizedBase;
-    cv::resize(baseMat, resizedBase, cameraMat.size());
-
-    // 转换为灰度图进行比较
-    cv::Mat grayBase, grayCamera;
-    cv::cvtColor(resizedBase, grayBase, cv::COLOR_BGR2GRAY);
-    cv::cvtColor(cameraMat, grayCamera, cv::COLOR_BGR2GRAY);
-
-    // 计算绝对差异
-    cv::Mat diff;
-    cv::absdiff(grayBase, grayCamera, diff);
-
-    // 应用阈值来突出差异
-    cv::Mat thresh;
-    cv::threshold(diff, thresh, 30, 255, cv::THRESH_BINARY);
-
-    // 计算差异像素数
-    int diffCount = cv::countNonZero(thresh);
-    double totalPixels = resizedBase.total();
-    double diffPercentage = (diffCount / totalPixels) * 100;
-
-    // 计算平均差异值
-    cv::Scalar meanDiff = cv::mean(diff);
-    double avgDiff = meanDiff[0];
-
-    if (diffPercentage < 5 && avgDiff < 30) {
-        ui->resultLabel->setText(QString("图片相似，差异率: %1%, 平均差异: %2").arg(diffPercentage, 0, 'f', 2).arg(avgDiff, 0, 'f', 2));
-        ui->resultLabel->setStyleSheet("color: green;");
-    } else {
-        ui->resultLabel->setText(QString("图片差异较大，差异率: %1%, 平均差异: %2").arg(diffPercentage, 0, 'f', 2).arg(avgDiff, 0, 'f', 2));
-        ui->resultLabel->setStyleSheet("color: red;");
-    }
-}
-
-
-
 void MainWindow::toggleCamera()
 {
     if (camera->isOpened()) {
         if (videoStreamActive) {
-            // 停止视频流
             videoTimer->stop();
             motionCaptureTimer->stop();
             videoStreamActive = false;
             captureEnabled = false;
             ui->cameraBtn->setText("开始视频流");
-            ui->resultLabel->setText("视频流已停止，可进行比较");
+            ui->resultLabel->setText("视频流已停止");
             ui->resultLabel->setStyleSheet("color: blue;");
         } else {
-            // 开始视频流
-            videoTimer->start(33); // 约30fps
+            videoTimer->start(33);
             videoStreamActive = true;
             captureEnabled = true;
             captureCooldown = 0;
             ui->cameraBtn->setText("停止视频流");
-            ui->resultLabel->setText("视频流已开始，运动检测自动抓取已启用");
+            ui->resultLabel->setText("视频流已开始");
             ui->resultLabel->setStyleSheet("color: green;");
         }
     } else {
-        // 如果相机未打开，尝试重新打开默认相机
         bool success = camera->open(0);
         if (success) {
-            // 开始视频流
-            videoTimer->start(33); // 约30fps
+            videoTimer->start(33);
             videoStreamActive = true;
             captureEnabled = true;
             captureCooldown = 0;
             ui->cameraBtn->setText("停止视频流");
-            ui->resultLabel->setText("视频流已开始，运动检测自动抓取已启用");
+            ui->resultLabel->setText("视频流已开始");
             ui->resultLabel->setStyleSheet("color: green;");
         } else {
             ui->resultLabel->setText("无法打开相机");
@@ -187,43 +168,65 @@ void MainWindow::toggleCamera()
     }
 }
 
+void MainWindow::displayDetectionResult(const cv::Mat &image, const std::vector<DetectedObject> &objects, QLabel *label)
+{
+    if (image.empty()) {
+        return;
+    }
+
+    cv::Mat displayImage = image.clone();
+
+    for (const auto &obj : objects) {
+        cv::rectangle(displayImage, obj.boundingBox, cv::Scalar(0, 255, 0), 2);
+        cv::putText(displayImage, QString("Object %1").arg(obj.id).toStdString(), 
+                    cv::Point(obj.boundingBox.x, obj.boundingBox.y - 10), 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2);
+    }
+
+    QImage qimage = matToQImage(displayImage);
+    QPixmap pixmap = QPixmap::fromImage(qimage.scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    label->setPixmap(pixmap);
+}
+
 void MainWindow::captureBaseImage()
 {
     bool cameraWasOpen = camera->isOpened();
     bool videoStreamWasActive = videoStreamActive;
-    
+
     if (cameraWasOpen) {
-        // 如果视频流正在运行，暂停视频流，捕获一帧图像
         if (videoStreamWasActive) {
             videoTimer->stop();
             baseMat = camera->captureFrame();
-            videoTimer->start(33); // 恢复视频流
+            videoTimer->start(33);
         } else {
-            // 直接捕获一帧图像
             baseMat = camera->captureFrame();
         }
-        
+
         if (!baseMat.empty()) {
             baseImage = matToQImage(baseMat);
-            QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            ui->baseImageLabel->setPixmap(pixmap);
-            ui->resultLabel->setText("基准图片拍摄成功");
+            
+            // 自动检测基准图片中的物品并显示
+            baseDetectedObjects = detectObjectsInImage(baseMat);
+            displayDetectionResult(baseMat, baseDetectedObjects, ui->baseImageLabel);
+            
+            ui->resultLabel->setText(QString("基准图片拍摄成功，检测到 %1 个物品").arg(baseDetectedObjects.size()));
             ui->resultLabel->setStyleSheet("color: green;");
         } else {
             ui->resultLabel->setText("无法捕获基准图片");
             ui->resultLabel->setStyleSheet("color: red;");
         }
     } else {
-        // 如果相机未打开，尝试打开默认相机
         bool success = camera->open(0);
         if (success) {
-            // 捕获一帧图像作为基准图片
             baseMat = camera->captureFrame();
             if (!baseMat.empty()) {
                 baseImage = matToQImage(baseMat);
-                QPixmap pixmap = QPixmap::fromImage(baseImage.scaled(ui->baseImageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                ui->baseImageLabel->setPixmap(pixmap);
-                ui->resultLabel->setText("基准图片拍摄成功");
+                
+                // 自动检测基准图片中的物品并显示
+                baseDetectedObjects = detectObjectsInImage(baseMat);
+                displayDetectionResult(baseMat, baseDetectedObjects, ui->baseImageLabel);
+                
+                ui->resultLabel->setText(QString("基准图片拍摄成功，检测到 %1 个物品").arg(baseDetectedObjects.size()));
                 ui->resultLabel->setStyleSheet("color: green;");
             } else {
                 ui->resultLabel->setText("无法捕获基准图片");
@@ -236,32 +239,6 @@ void MainWindow::captureBaseImage()
     }
 }
 
-void MainWindow::captureImageAndCompare()
-{
-    if (camera->isOpened()) {
-        // 从视频流中捕获一帧图像
-        cameraMat = camera->captureFrame();
-        if (!cameraMat.empty()) {
-            // 更新相机图像显示
-            cameraImage = matToQImage(cameraMat);
-            int maxWidth = this->width() * 0.45;
-            int maxHeight = this->height() * 0.45;
-            QSize maxSize(maxWidth, maxHeight);
-            QPixmap pixmap = QPixmap::fromImage(cameraImage.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            ui->cameraImageLabel->setPixmap(pixmap);
-            
-            // 自动与基准图片进行比对
-            compareImages();
-        } else {
-            ui->resultLabel->setText("无法从视频流中抓取图片");
-            ui->resultLabel->setStyleSheet("color: red;");
-        }
-    } else {
-        ui->resultLabel->setText("相机未打开");
-        ui->resultLabel->setStyleSheet("color: red;");
-    }
-}
-
 void MainWindow::resetCaptureCooldown()
 {
     if (captureCooldown > 0) {
@@ -271,78 +248,178 @@ void MainWindow::resetCaptureCooldown()
 
 
 
+void MainWindow::compareDetectedObjects()
+{
+    if (baseDetectedObjects.empty() || captureDetectedObjects.empty()) {
+        ui->resultLabel->setText("请先检测基准图片和抓取图片中的物品");
+        ui->resultLabel->setStyleSheet("color: red;");
+        return;
+    }
+
+    if (compareResultDialog) {
+        delete compareResultDialog;
+    }
+
+    compareResultDialog = new QDialog(this);
+    compareResultDialog->setWindowTitle("物品对比结果");
+    compareResultDialog->resize(600, 400);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(compareResultDialog);
+
+    QLabel *infoLabel = new QLabel(QString("基准图片检测到 %1 个物品，抓取图片检测到 %2 个物品")
+                                       .arg(baseDetectedObjects.size())
+                                       .arg(captureDetectedObjects.size()));
+    infoLabel->setAlignment(Qt::AlignCenter);
+    mainLayout->addWidget(infoLabel);
+
+    QScrollArea *scrollArea = new QScrollArea();
+    QWidget *containerWidget = new QWidget();
+    QVBoxLayout *itemsLayout = new QVBoxLayout(containerWidget);
+
+    bool sameObjectFound = false;
+    for (size_t i = 0; i < baseDetectedObjects.size(); i++) {
+        for (size_t j = 0; j < captureDetectedObjects.size(); j++) {
+            double baseArea = baseDetectedObjects[i].boundingBox.area();
+            double captureArea = captureDetectedObjects[j].boundingBox.area();
+            double areaRatio = baseArea / captureArea;
+
+            if (areaRatio > 0.8 && areaRatio < 1.2) {
+                sameObjectFound = true;
+                QLabel *itemLabel = new QLabel(QString("物品 %1 与物品 %2 可能是同一个物品 (面积比率: %3%)")
+                                                   .arg(i + 1)
+                                                   .arg(j + 1)
+                                                   .arg(areaRatio * 100, 0, 'f', 1));
+                itemLabel->setStyleSheet("color: green; padding: 5px;");
+                itemsLayout->addWidget(itemLabel);
+            }
+        }
+    }
+
+    if (!sameObjectFound) {
+        QLabel *noMatchLabel = new QLabel("未检测到相同的物品");
+        noMatchLabel->setAlignment(Qt::AlignCenter);
+        noMatchLabel->setStyleSheet("color: red;");
+        itemsLayout->addWidget(noMatchLabel);
+    }
+
+    scrollArea->setWidget(containerWidget);
+    scrollArea->setWidgetResizable(true);
+    mainLayout->addWidget(scrollArea);
+
+    QPushButton *closeBtn = new QPushButton("关闭");
+    mainLayout->addWidget(closeBtn);
+    connect(closeBtn, &QPushButton::clicked, compareResultDialog, &QDialog::close);
+
+    compareResultDialog->show();
+
+    if (sameObjectFound) {
+        ui->resultLabel->setText("检测到相同的物品");
+        ui->resultLabel->setStyleSheet("color: green;");
+    } else {
+        ui->resultLabel->setText("未检测到相同的物品");
+        ui->resultLabel->setStyleSheet("color: red;");
+    }
+}
+
+void MainWindow::detectProducts()
+{
+    if (baseMat.empty()) {
+        ui->resultLabel->setText("请先拍摄基准图片");
+        ui->resultLabel->setStyleSheet("color: red;");
+        return;
+    }
+
+    if (cameraMat.empty()) {
+        ui->resultLabel->setText("请先抓取图片");
+        ui->resultLabel->setStyleSheet("color: red;");
+        return;
+    }
+
+    baseDetectedObjects = detectObjectsInImage(baseMat);
+    captureDetectedObjects = detectObjectsInImage(cameraMat);
+
+    if (baseDetectedObjects.empty()) {
+        ui->resultLabel->setText("无法从基准图片中提取物品");
+        ui->resultLabel->setStyleSheet("color: red;");
+        return;
+    }
+
+    if (captureDetectedObjects.empty()) {
+        ui->resultLabel->setText("无法从抓取图片中提取物品");
+        ui->resultLabel->setStyleSheet("color: red;");
+        return;
+    }
+
+    ui->resultLabel->setText(QString("基准图片: %1 个物品, 抓取图片: %2 个物品")
+                                 .arg(baseDetectedObjects.size())
+                                 .arg(captureDetectedObjects.size()));
+    ui->resultLabel->setStyleSheet("color: blue;");
+}
+
 void MainWindow::updateVideoStream()
 {
     if (camera->isOpened()) {
-        // 捕获视频帧
         cameraMat = camera->captureFrame();
         if (!cameraMat.empty()) {
-            // 应用运动侦测
-            // 转换为灰度图
             cv::Mat grayFrame;
             cv::cvtColor(cameraMat, grayFrame, cv::COLOR_BGR2GRAY);
-            
-            // 高斯模糊
+
             cv::GaussianBlur(grayFrame, grayFrame, cv::Size(21, 21), 0);
-            
-            // 如果是第一帧，保存为前一帧
+
             if (previousFrame.empty()) {
                 grayFrame.copyTo(previousFrame);
             }
-            
-            // 计算帧差
+
             cv::absdiff(previousFrame, grayFrame, motionMask);
-            
-            // 应用阈值
+
             cv::threshold(motionMask, motionMask, 25, 255, cv::THRESH_BINARY);
-            
-            // 形态学操作
+
             cv::dilate(motionMask, motionMask, cv::Mat(), cv::Point(-1, -1), 2);
             cv::erode(motionMask, motionMask, cv::Mat(), cv::Point(-1, -1), 1);
-            
-            // 检测轮廓
+
             std::vector<std::vector<cv::Point>> contours;
             cv::findContours(motionMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-            
-            // 绘制轮廓
+
             motionDetected = false;
             for (size_t i = 0; i < contours.size(); i++) {
-                // 过滤小轮廓
                 if (cv::contourArea(contours[i]) < 500) {
                     continue;
                 }
-                
-                // 绘制边界框
+
                 cv::Rect boundingRect = cv::boundingRect(contours[i]);
                 cv::rectangle(cameraMat, boundingRect, cv::Scalar(0, 255, 0), 2);
-                
-                // 检测到运动
+
                 motionDetected = true;
             }
-            
-            // 保存当前帧为前一帧
+
             grayFrame.copyTo(previousFrame);
-            
-            // 根据运动检测自动抓取图片
+
             if (motionDetected && captureEnabled && captureCooldown == 0) {
-                // 自动抓取图片并与基准图片进行比对
-                captureImageAndCompare();
-                
-                // 设置冷却时间，避免频繁抓取
-                captureCooldown = 5; // 5秒
-                
-                // 启动冷却时间定时器
+                if (!cameraMat.empty()) {
+                    // 自动检测抓取图片中的物品并显示
+                    captureDetectedObjects = detectObjectsInImage(cameraMat);
+                    displayDetectionResult(cameraMat, captureDetectedObjects, ui->cameraImageLabel);
+
+                    ui->resultLabel->setText(QString("检测到运动，抓取图片并检测到 %1 个物品").arg(captureDetectedObjects.size()));
+                    ui->resultLabel->setStyleSheet("color: green;");
+
+                    // 自动对比检测结果
+                    if (!baseDetectedObjects.empty() && !captureDetectedObjects.empty()) {
+                        compareDetectedObjects();
+                    }
+                }
+
+                captureCooldown = 5;
+
                 if (!motionCaptureTimer->isActive()) {
                     motionCaptureTimer->start();
                 }
             }
-            
+
             cameraImage = matToQImage(cameraMat);
-            // 计算窗口大小的45%
             int maxWidth = this->width() * 0.45;
             int maxHeight = this->height() * 0.45;
             QSize maxSize(maxWidth, maxHeight);
-            // 缩放到窗口大小的45%，保持宽高比
             QPixmap pixmap = QPixmap::fromImage(cameraImage.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
             ui->cameraImageLabel->setPixmap(pixmap);
         }

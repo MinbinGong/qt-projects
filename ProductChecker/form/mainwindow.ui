@@ -58,13 +58,6 @@
             </property>
            </widget>
           </item>
-          <item>
-           <widget class="QPushButton" name="captureImageBtn">
-            <property name="text">
-             <string>抓取图片</string>
-            </property>
-           </widget>
-          </item>
          </layout>
         </item>
         <item>
@@ -90,17 +83,27 @@
       </item>
      </layout>
     </item>
+
     <item>
-     <widget class="QPushButton" name="compareBtn">
+     <widget class="QPushButton" name="detectBtn">
       <property name="text">
-       <string>比较图片</string>
+       <string>检测产品</string>
       </property>
      </widget>
     </item>
+
+    <item>
+     <widget class="QPushButton" name="compareBtn">
+      <property name="text">
+       <string>对比物品</string>
+      </property>
+     </widget>
+    </item>
+
     <item>
      <widget class="QLabel" name="resultLabel">
       <property name="text">
-       <string>比较结果</string>
+       <string>检测结果</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>
