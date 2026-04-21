@@ -31,9 +31,9 @@ FORMS += \
     Form/mainwindow.ui
 
 INCLUDEPATH += include \
-    C:/opencv-build/install/include
+    $$(OPENCV_SDK_DIR)/include
 
-LIBS += -LC:/opencv-build/install/x64/mingw/lib \
+LIBS += -L$$(OPENCV_SDK_DIR)/x64/mingw/lib \
     -lopencv_core4120 \
     -lopencv_imgproc4120 \
     -lopencv_imgcodecs4120 \
