@@ -72,8 +72,10 @@ void DetectionResultWindow::updateDisplay()
     QPixmap pixmap = QPixmap::fromImage(qimage);
     m_imageLabel->setPixmap(pixmap.scaled(m_imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
-    m_objectInfoLabel->setText(QString("物品 %1: 位置(%2, %3) 大小(%4x%5)")
+    m_objectInfoLabel->setText(QString("物品 %1: %2 (%.1f%%) 位置(%3, %4) 大小(%5x%6)")
                                     .arg(m_objects[m_currentIndex].id)
+                                    .arg(QString::fromStdString(m_objects[m_currentIndex].className))
+                                    .arg(m_objects[m_currentIndex].confidence * 100)
                                     .arg(m_objects[m_currentIndex].boundingBox.x)
                                     .arg(m_objects[m_currentIndex].boundingBox.y)
                                     .arg(m_objects[m_currentIndex].boundingBox.width)

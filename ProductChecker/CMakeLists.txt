@@ -30,12 +30,16 @@ set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/camera.cpp
+    src/detectionresultwindow.cpp
+    src/objectdetector.cpp
 )
 
 # 头文件
 set(HEADERS
     include/mainwindow.h
     include/camera.h
+    include/detectionresultwindow.h
+    include/objectdetector.h
 )
 
 # UI文件
@@ -56,4 +60,32 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/debug
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/release
+)
+
+# 拷贝YOLO模型文件到输出目录
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/libs/YOLO3
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/libs/YOLO3
+)
+
+# 拷贝YOLO模型文件到输出目录根目录（用于兼容性）
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/libs/YOLO3/yolov3.weights
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/yolov3.weights
+)
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/libs/YOLO3/yolo3.cfg
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/yolo3.cfg
+)
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/libs/YOLO3/coco.names
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/coco.names
 )

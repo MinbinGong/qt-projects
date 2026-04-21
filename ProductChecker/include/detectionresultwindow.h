@@ -12,6 +12,8 @@ struct DetectedObject {
     cv::Rect boundingBox;
     cv::Mat image;
     int id;
+    std::string className;
+    float confidence;
 };
 
 class DetectionResultWindow : public QWidget

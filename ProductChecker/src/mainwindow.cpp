@@ -34,42 +34,34 @@ std::vector<DetectedObject> MainWindow::detectObjectsInImage(const cv::Mat &imag
         return detectedObjects;
     }
 
-    cv::Mat gray;
-    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-
-    cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0);
-
-    cv::Mat thresh;
-    cv::threshold(gray, thresh, 127, 255, cv::THRESH_BINARY);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    int objectId = 0;
-    for (size_t i = 0; i < contours.size(); i++) {
-        double area = cv::contourArea(contours[i]);
-        if (area < 500) {
-            continue;
-        }
-
-        DetectedObject obj;
-        obj.boundingBox = cv::boundingRect(contours[i]);
-        obj.image = image(obj.boundingBox).clone();
-        obj.id = objectId++;
-
-        detectedObjects.push_back(obj);
-    }
+    // 使用ObjectDetector类进行物品检测
+    detectedObjects = objectDetector->detectObjects(image, 0.5);
 
     return detectedObjects;
 }
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow), cameraActive(false), videoStreamActive(false), motionDetected(false), captureEnabled(false), captureCooldown(0),
-      compareResultDialog(nullptr)
+      baseResultWindow(nullptr), compareResultDialog(nullptr)
 {
     ui->setupUi(this);
 
     camera = new Camera(this);
+    objectDetector = new ObjectDetector();
+
+    // 加载YOLO模型
+    std::string modelPath = "libs/YOLO3/yolov3.weights";
+    std::string configPath = "libs/YOLO3/yolo3.cfg";
+    std::string classesPath = "libs/YOLO3/coco.names";
+    
+    bool modelLoaded = objectDetector->loadModel(modelPath, configPath, classesPath);
+    if (!modelLoaded) {
+        ui->resultLabel->setText("无法加载检测模型，将使用基于轮廓的检测方法");
+        ui->resultLabel->setStyleSheet("color: orange;");
+    } else {
+        ui->resultLabel->setText("模型加载成功");
+        ui->resultLabel->setStyleSheet("color: green;");
+    }
 
     videoTimer = new QTimer(this);
     connect(videoTimer, &QTimer::timeout, this, &MainWindow::updateVideoStream);
@@ -117,15 +109,20 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->captureBaseBtn, &QPushButton::clicked, this, &MainWindow::captureBaseImage);
     connect(ui->cameraBtn, &QPushButton::clicked, this, &MainWindow::toggleCamera);
     connect(ui->detectBtn, &QPushButton::clicked, this, &MainWindow::detectProducts);
+    connect(ui->showBaseDetectBtn, &QPushButton::clicked, this, &MainWindow::showBaseDetectionResult);
     connect(ui->compareBtn, &QPushButton::clicked, this, &MainWindow::compareDetectedObjects);
 }
 
 MainWindow::~MainWindow()
 {
+    if (baseResultWindow) {
+        delete baseResultWindow;
+    }
     if (compareResultDialog) {
         delete compareResultDialog;
     }
     delete camera;
+    delete objectDetector;
     delete videoTimer;
     delete motionCaptureTimer;
     delete ui;
@@ -178,7 +175,8 @@ void MainWindow::displayDetectionResult(const cv::Mat &image, const std::vector<
 
     for (const auto &obj : objects) {
         cv::rectangle(displayImage, obj.boundingBox, cv::Scalar(0, 255, 0), 2);
-        cv::putText(displayImage, QString("Object %1").arg(obj.id).toStdString(), 
+        std::string labelText = obj.className + " (" + std::to_string(obj.confidence * 100) + "%)";
+        cv::putText(displayImage, labelText, 
                     cv::Point(obj.boundingBox.x, obj.boundingBox.y - 10), 
                     cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2);
     }
@@ -186,6 +184,21 @@ void MainWindow::displayDetectionResult(const cv::Mat &image, const std::vector<
     QImage qimage = matToQImage(displayImage);
     QPixmap pixmap = QPixmap::fromImage(qimage.scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
     label->setPixmap(pixmap);
+}
+
+void MainWindow::showBaseDetectionResult()
+{
+    if (!baseMat.empty()) {
+        baseDetectedObjects = detectObjectsInImage(baseMat);
+
+        if (!baseResultWindow) {
+            baseResultWindow = new DetectionResultWindow("基准图片检测结果");
+        }
+
+        baseResultWindow->setImage(baseMat);
+        baseResultWindow->setDetectedObjects(baseDetectedObjects);
+        baseResultWindow->show();
+    }
 }
 
 void MainWindow::captureBaseImage()
@@ -209,6 +222,9 @@ void MainWindow::captureBaseImage()
             baseDetectedObjects = detectObjectsInImage(baseMat);
             displayDetectionResult(baseMat, baseDetectedObjects, ui->baseImageLabel);
             
+            // 自动以独立窗口展示基准图片中的物品
+            showBaseDetectionResult();
+            
             ui->resultLabel->setText(QString("基准图片拍摄成功，检测到 %1 个物品").arg(baseDetectedObjects.size()));
             ui->resultLabel->setStyleSheet("color: green;");
         } else {
@@ -225,6 +241,9 @@ void MainWindow::captureBaseImage()
                 // 自动检测基准图片中的物品并显示
                 baseDetectedObjects = detectObjectsInImage(baseMat);
                 displayDetectionResult(baseMat, baseDetectedObjects, ui->baseImageLabel);
+                
+                // 自动以独立窗口展示基准图片中的物品
+                showBaseDetectionResult();
                 
                 ui->resultLabel->setText(QString("基准图片拍摄成功，检测到 %1 个物品").arg(baseDetectedObjects.size()));
                 ui->resultLabel->setStyleSheet("color: green;");

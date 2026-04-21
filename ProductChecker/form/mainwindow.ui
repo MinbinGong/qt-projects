@@ -27,6 +27,13 @@
          </widget>
         </item>
         <item>
+         <widget class="QPushButton" name="showBaseDetectBtn">
+          <property name="text">
+           <string>显示基准检测结果</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QLabel" name="baseImageLabel">
           <property name="styleSheet">
            <string notr="true">border: 1px solid gray;</string>

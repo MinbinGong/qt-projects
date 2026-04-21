@@ -6,6 +6,8 @@
 #include <QDialog>
 #include <QLabel>
 #include "camera.h"
+#include "detectionresultwindow.h"
+#include "objectdetector.h"
 #include <opencv2/opencv.hpp>
 
 QT_BEGIN_NAMESPACE
@@ -13,12 +15,6 @@ namespace Ui {
 class MainWindow;
 }
 QT_END_NAMESPACE
-
-struct DetectedObject {
-    cv::Rect boundingBox;
-    cv::Mat image;
-    int id;
-};
 
 class MainWindow : public QMainWindow
 {
@@ -34,6 +30,7 @@ private slots:
     void updateVideoStream();
     void resetCaptureCooldown();
     void detectProducts();
+    void showBaseDetectionResult();
     void compareDetectedObjects();
 
 private:
@@ -43,6 +40,7 @@ private:
 
     Ui::MainWindow *ui;
     Camera *camera;
+    ObjectDetector *objectDetector;
     QTimer *videoTimer;
     QTimer *motionCaptureTimer;
     bool cameraActive;
@@ -58,6 +56,7 @@ private:
     QImage cameraImage;
     std::vector<DetectedObject> baseDetectedObjects;
     std::vector<DetectedObject> captureDetectedObjects;
+    DetectionResultWindow *baseResultWindow;
     QDialog *compareResultDialog;
 };
 
