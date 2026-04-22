@@ -1,3 +1,4 @@
 .qtc_clangd/
 .qtcreator/
-build/
+build/*
+Makefile.*

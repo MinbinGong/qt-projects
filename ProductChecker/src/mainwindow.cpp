@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QInputDialog>
@@ -8,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
+#include <QDebug>
 
 QImage MainWindow::matToQImage(const cv::Mat &mat)
 {
@@ -50,9 +52,10 @@ MainWindow::MainWindow(QWidget *parent)
     objectDetector = new ObjectDetector();
 
     // 加载YOLO模型
-    std::string modelPath = "libs/YOLO3/yolov3.weights";
-    std::string configPath = "libs/YOLO3/yolo3.cfg";
-    std::string classesPath = "libs/YOLO3/coco.names";
+    QString appDir = QCoreApplication::applicationDirPath();
+    std::string modelPath = (appDir + "/libs/YOLO3/yolov3.weights").toStdString();
+    std::string configPath = (appDir + "/libs/YOLO3/yolo3.cfg").toStdString();
+    std::string classesPath = (appDir + "/libs/YOLO3/coco.names").toStdString();
     
     bool modelLoaded = objectDetector->loadModel(modelPath, configPath, classesPath);
     if (!modelLoaded) {
@@ -267,6 +270,50 @@ void MainWindow::resetCaptureCooldown()
 
 
 
+// 计算颜色直方图
+cv::Mat calculateColorHistogram(const cv::Mat &image) {
+    cv::Mat hsv;
+    cv::cvtColor(image, hsv, cv::COLOR_BGR2HSV);
+    
+    int histSize[] = {50, 60};
+    float hRange[] = {0, 180};
+    float sRange[] = {0, 256};
+    const float* ranges[] = {hRange, sRange};
+    int channels[] = {0, 1};
+    
+    cv::Mat hist;
+    cv::calcHist(&hsv, 1, channels, cv::Mat(), hist, 2, histSize, ranges, true, false);
+    cv::normalize(hist, hist, 0, 1, cv::NORM_MINMAX);
+    
+    return hist;
+}
+
+// 计算形状特征（面积与周长的比率）
+double calculateShapeFeature(const cv::Mat &image) {
+    cv::Mat gray;
+    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+    
+    cv::Mat thresh;
+    cv::threshold(gray, thresh, 127, 255, cv::THRESH_BINARY);
+    
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    
+    if (contours.empty()) {
+        return 0;
+    }
+    
+    double area = cv::contourArea(contours[0]);
+    double perimeter = cv::arcLength(contours[0], true);
+    
+    return perimeter > 0 ? area / perimeter : 0;
+}
+
+// 计算颜色相似度
+double calculateColorSimilarity(const cv::Mat &hist1, const cv::Mat &hist2) {
+    return cv::compareHist(hist1, hist2, cv::HISTCMP_CORREL);
+}
+
 void MainWindow::compareDetectedObjects()
 {
     if (baseDetectedObjects.empty() || captureDetectedObjects.empty()) {
@@ -297,17 +344,39 @@ void MainWindow::compareDetectedObjects()
 
     bool sameObjectFound = false;
     for (size_t i = 0; i < baseDetectedObjects.size(); i++) {
+        // 计算基准物品的特征
+        cv::Mat baseHist = calculateColorHistogram(baseDetectedObjects[i].image);
+        double baseShape = calculateShapeFeature(baseDetectedObjects[i].image);
+        
         for (size_t j = 0; j < captureDetectedObjects.size(); j++) {
+            // 计算抓取物品的特征
+            cv::Mat captureHist = calculateColorHistogram(captureDetectedObjects[j].image);
+            double captureShape = calculateShapeFeature(captureDetectedObjects[j].image);
+            
+            // 计算面积比率
             double baseArea = baseDetectedObjects[i].boundingBox.area();
             double captureArea = captureDetectedObjects[j].boundingBox.area();
             double areaRatio = baseArea / captureArea;
-
-            if (areaRatio > 0.8 && areaRatio < 1.2) {
+            
+            // 计算颜色相似度
+            double colorSimilarity = calculateColorSimilarity(baseHist, captureHist);
+            
+            // 计算形状相似度
+            double shapeDiff = fabs(baseShape - captureShape) / (baseShape + 1e-6);
+            double shapeSimilarity = 1.0 - shapeDiff;
+            
+            // 综合评分
+            double totalScore = 0.2 * (1.0 - fabs(1.0 - areaRatio)) + 
+                               0.6 * colorSimilarity + 
+                               0.2 * shapeSimilarity;
+            
+            // 设置阈值
+            if (totalScore > 0.5) {
                 sameObjectFound = true;
-                QLabel *itemLabel = new QLabel(QString("物品 %1 与物品 %2 可能是同一个物品 (面积比率: %3%)")
+                QLabel *itemLabel = new QLabel(QString("物品 %1 与物品 %2 可能是同一个物品 (相似度: %3%)")
                                                    .arg(i + 1)
                                                    .arg(j + 1)
-                                                   .arg(areaRatio * 100, 0, 'f', 1));
+                                                   .arg(totalScore * 100, 0, 'f', 1));
                 itemLabel->setStyleSheet("color: green; padding: 5px;");
                 itemsLayout->addWidget(itemLabel);
             }

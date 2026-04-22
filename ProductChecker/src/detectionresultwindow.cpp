@@ -51,13 +51,6 @@ void DetectionResultWindow::setDetectedObjects(const std::vector<DetectedObject>
 
 void DetectionResultWindow::updateDisplay()
 {
-    if (m_originalImage.empty()) {
-        m_imageLabel->setText("没有图片");
-        m_objectInfoLabel->setText("未检测到物品");
-        m_objectCountLabel->setText("0 / 0");
-        return;
-    }
-
     if (m_objects.empty()) {
         m_imageLabel->setText("没有检测到物品");
         m_objectInfoLabel->setText("未检测到物品");
@@ -65,8 +58,8 @@ void DetectionResultWindow::updateDisplay()
         return;
     }
 
-    cv::Mat displayImage = m_originalImage.clone();
-    cv::rectangle(displayImage, m_objects[m_currentIndex].boundingBox, cv::Scalar(0, 255, 0), 2);
+    // 只显示检测到的物品，而不是完整的基准图片
+    cv::Mat displayImage = m_objects[m_currentIndex].image.clone();
 
     QImage qimage = QImage(displayImage.data, displayImage.cols, displayImage.rows, displayImage.step, QImage::Format_RGB888).rgbSwapped();
     QPixmap pixmap = QPixmap::fromImage(qimage);

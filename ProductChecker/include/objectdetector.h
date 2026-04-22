@@ -21,6 +21,7 @@ private:
     
     void preprocessImage(const cv::Mat& image, cv::Mat& blob);
     void postprocessImage(const cv::Mat& image, const std::vector<cv::Mat>& outputs, std::vector<DetectedObject>& detectedObjects, float confidenceThreshold);
+    std::vector<DetectedObject> detectObjectsUsingContours(const cv::Mat& image);
 };
 
 #endif // OBJECTDETECTOR_H
