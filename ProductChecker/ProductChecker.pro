@@ -3,7 +3,6 @@ QT += widgets
 TEMPLATE = app
 TARGET = ProductChecker
 
-# 指定输出目录
 CONFIG(debug, debug|release) {
     DESTDIR = build/debug
     OBJECTS_DIR = build/debug/obj
@@ -17,25 +16,6 @@ CONFIG(debug, debug|release) {
     RCC_DIR = build/release/rcc
     UI_DIR = build/release/ui
 }
-
-# 拷贝YOLO模型文件到输出目录
-CONFIG(debug, debug|release) {
-    YOLO_OUTPUT_DIR = $$DESTDIR/libs/YOLO3
-} else {
-    YOLO_OUTPUT_DIR = $$DESTDIR/libs/YOLO3
-}
-
-# 创建目录
-QMAKE_POST_LINK += $$QMAKE_MKDIR_CMD $$YOLO_OUTPUT_DIR
-
-# 拷贝文件
-QMAKE_POST_LINK += $$QMAKE_COPY_DIR libs/YOLO3 $$YOLO_OUTPUT_DIR
-
-# 拷贝到根目录（用于兼容性）
-QMAKE_POST_LINK += $$QMAKE_COPY libs/YOLO3/yolov3.weights $$DESTDIR/
-yolov3.weights
-QMAKE_POST_LINK += $$QMAKE_COPY libs/YOLO3/yolo3.cfg $$DESTDIR/yolo3.cfg
-QMAKE_POST_LINK += $$QMAKE_COPY libs/YOLO3/coco.names $$DESTDIR/coco.names
 
 SOURCES += \
     src/main.cpp \
@@ -51,7 +31,7 @@ HEADERS += \
     include/objectdetector.h
 
 FORMS += \
-    Form/mainwindow.ui
+    form/mainwindow.ui
 
 INCLUDEPATH += include \
     $$(OPENCV_SDK_DIR)/include
@@ -62,3 +42,22 @@ LIBS += -L$$(OPENCV_SDK_DIR)/x64/mingw/lib \
     -lopencv_imgcodecs4120 \
     -lopencv_videoio4120 \
     -lopencv_dnn4120
+
+YOLO_FILES = \
+    $$PWD/libs/YOLO3/yolov3.weights \
+    $$PWD/libs/YOLO3/yolo3.cfg \
+    $$PWD/libs/YOLO3/coco.names
+
+# 拷贝YOLO模型文件
+win32 {
+    # 创建目标目录
+    QMAKE_POST_LINK = mkdir "$$DESTDIR/libs" 2>nul && mkdir "$$DESTDIR/libs/YOLO3" 2>nul
+    # 拷贝YOLO模型文件
+    QMAKE_POST_LINK += && xcopy /s /q /y /i "$$PWD/libs/YOLO3" "$$DESTDIR/libs/YOLO3"
+    QMAKE_POST_LINK += && copy /y "$$PWD/libs/YOLO3/yolov3.weights" "$$DESTDIR/"
+    QMAKE_POST_LINK += && copy /y "$$PWD/libs/YOLO3/yolo3.cfg" "$$DESTDIR/"
+    QMAKE_POST_LINK += && copy /y "$$PWD/libs/YOLO3/coco.names" "$$DESTDIR/"
+    # 部署Qt依赖
+    WINDEPLOYQT = $$[QT_INSTALL_BINS]/windeployqt.exe
+    QMAKE_POST_LINK += && "$$WINDEPLOYQT" --no-compiler-runtime --no-translations "$$DESTDIR$$TARGET.exe"
+}
